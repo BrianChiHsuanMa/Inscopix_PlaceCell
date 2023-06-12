@@ -18,7 +18,12 @@ import os
 import json
 import random
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
-
+#%% run block
+df_traces, df_events, df_gpio, sessions, n_sessions = read_inputs(
+    r'C:\Users\owner\PlaceCell\SampleData')
+traces_start, traces_end, vid_start, vid_end = process_GPIO(df_gpio)
+process_calcium(df_traces, df_events, sessions, n_sessions)
+#%%
 def create_savepath(data_dir):
     '''
     Creates a subfolder underneath the indicated directory to store output files
@@ -38,6 +43,31 @@ def create_savepath(data_dir):
         os.mkdir(processed)
 
 def read_inputs(data_dir, use_denoise = True):
+    '''
+    Read all csv files in directory into Dataframes
+
+    Parameters
+    ----------
+    data_dir : path
+        Path to dir where the files are saved.
+    use_denoise : boolean, optional
+        Whether to use the denoised traces. The default is True.
+
+    Returns
+    -------
+    df_traces : Dataframe
+        DESCRIPTION.
+    df_events : Dataframe
+        DESCRIPTION.
+    df_gpio : Dataframe
+        DESCRIPTION.
+    sessions : dictionary
+        DESCRIPTION.
+    n_sessions : integer
+        DESCRIPTION.
+
+    '''
+    files = os.listdir(data_dir)
     sessions = {}
     n_sessions = 0
     for file in files:
@@ -49,8 +79,14 @@ def read_inputs(data_dir, use_denoise = True):
             df_events = pd.read_csv(os.path.join(data_dir, file))
         elif file.endswith('GPIO.csv'):
             df_gpio = pd.read_csv(os.path.join(data_dir, file))
-        elif 'shuffle' in file:
-            sessions['df_motion' + str(n_sessions)] = pd.read_csv(os.path.join(data_dir, file))
+        elif 'shuffle' in file: # Reads and cleans motion data
+            df_currvid = pd.read_csv(os.path.join(data_dir, file))
+            df_currvid.columns = df_currvid.loc[0]+'_'+df_currvid.loc[1]
+            df_currvid.drop(index=[0,1],inplace=True)
+            df_currvid.drop(columns = 'bodyparts_coords', inplace = True)
+            df_currvid.reset_index(drop=True,inplace=True)
+            df_currvid = df_currvid.astype(float)
+            sessions['df_vid' + str(n_sessions)] = df_currvid.copy()
             n_sessions = n_sessions + 1
             
     return df_traces, df_events, df_gpio, sessions, n_sessions
@@ -67,43 +103,63 @@ def process_GPIO(df_gpio):
     traces_end.reset_index(inplace = True, drop = True)
     
     # Find behavioural video start and end time
-    df_gpio_motion = df_gpio.loc[df_gpio[' Channel Name']==' BNC Trigger Input']
+    df_gpio_vid = df_gpio.loc[df_gpio[' Channel Name']==' BNC Trigger Input']
     #motion_delay = df_gpio_motion.iloc[1]['Time (s)']
-    motion_start = df_gpio_motion.loc[df_gpio_motion[' Value'] > 0]['Time (s)'] - traces_delay
-    motion_end = df_gpio_motion.loc[motion_start.index + 1]['Time (s)'] - traces_delay
-    motion_start.reset_index(inplace = True, drop = True)
-    motion_end.reset_index(inplace = True, drop = True)
+    vid_start = df_gpio_vid.loc[df_gpio_vid[' Value'] > 0]['Time (s)'] - traces_delay
+    vid_end = df_gpio_vid.loc[vid_start.index + 1]['Time (s)'] - traces_delay
+    vid_start.reset_index(inplace = True, drop = True)
+    vid_end.reset_index(inplace = True, drop = True)
     
     # Perform several tests to validate synchronization
-    if motion_start.shape[0] != n_sessions:
+    if vid_start.shape[0] != n_sessions:
         print('Wrong number of motion sessions extracted from GPIO')
     if traces_start.shape[0] != n_sessions:
         print('Wrong number of calcium sessions extracted from GPIO')
-    if (abs(motion_start - traces_start) > 0.1).any():
+    if any(abs(vid_start - traces_start) > 0.1):
         print('Motion and calcium data are misaligned')
     
-    return traces_start, traces_end, motion_start, motion_end
+    return traces_start, traces_end, vid_start, vid_end
 #%%
-for cell in df_traces.columns:
-    if df_traces[cell][0] == ' rejected':
-        df_traces.drop(columns=[cell], inplace=True)
-df_traces.drop(index=0,inplace=True)
-df_traces = df_traces.reset_index(drop=True).astype(float)
-df_traces.rename(columns = {' ':'Time (s)'}, inplace = True)
-
+def process_calcium(df_traces, df_events, sessions, n_sessions):
+    for cell in df_traces.columns:
+        if df_traces[cell][0] == ' rejected':
+            df_traces.drop(columns=[cell], inplace=True)
+    df_traces.drop(index=0,inplace=True)
+    df_traces = df_traces.reset_index(drop=True).astype(float)
+    df_traces.rename(columns = {' ':'Time (s)'}, inplace = True)
+    
+    df_events_expand = pd.DataFrame(data = df_traces['Time (s)'],
+                                    columns = df_traces.columns)
+    for cell in set(df_events[' Cell Name'].tolist()):
+        df_current_cell = df_events.loc[df_events[' Cell Name'] == cell].copy()
+        for spiketime in df_current_cell['Time (s)']:
+            spikeval = float(df_current_cell.loc[df_current_cell['Time (s)'] == spiketime, ' Value'])
+            ind_spike = (df_traces['Time (s)'] - spiketime).abs().argsort()[0]
+            df_events_expand.loc[ind_spike, cell] = spikeval
+    
+    for s in range(n_sessions):
+        ind_start = (df_traces['Time (s)'] - traces_start[s]).abs().argsort()[0]
+        ind_end = (df_traces['Time (s)'] - traces_end[s]).abs().argsort()[0]
+        df_traces_curr = df_traces[ind_start:ind_end+1].copy().reset_index(drop=True)
+        df_traces_curr['Time (s)'] = df_traces_curr['Time (s)'] - df_traces_curr['Time (s)'][0]
+        sessions['df_traces' + str(s)] = df_traces_curr
+        df_events_curr = df_events_expand[ind_start:ind_end+1].copy().reset_index(drop=True)
+        df_events_curr['Time (s)'] = df_events_curr['Time (s)'] - df_events_curr['Time (s)'][0]
+        sessions['df_events' + str(s)] = df_events_curr
+#%%
 df_events_expand = pd.DataFrame(data = df_traces['Time (s)'], columns = df_traces.columns)
 for cell in set(df_events[' Cell Name'].tolist()):
     df_current_cell = df_events.loc[df_events[' Cell Name'] == cell].copy()
     for spiketime in df_current_cell['Time (s)']:
         spikeval = float(df_current_cell.loc[df_current_cell['Time (s)'] == spiketime, ' Value'])
-        actualtime = [time for time in df_events_expand['Time (s)'] if abs(time - spiketime) <= 0.05][0]
-        df_events_expand.loc[df_events_expand['Time (s)'] == actualtime, cell] = spikeval
-
-df_motion.columns = df_motion.loc[0]+'_'+df_motion.loc[1]
-df_motion.drop(index=[0,1],inplace=True)
-df_motion.drop(columns = 'bodyparts_coords', inplace = True)
-df_motion.reset_index(drop=True,inplace=True)
-df_motion = df_motion.astype(float)
+        #actualtime = [time for time in df_events_expand['Time (s)'] if abs(time - spiketime) <= 0.05][0]
+        ind_spike = (df_traces['Time (s)'] - spiketime).abs().argsort()[0]
+        df_events_expand.loc[ind_spike, cell] = spikeval
+        
+for s in range(n_sessions):
+    df_traces_curr = sessions['df_traces' + str(s)]
+    df_events_curr = pd.DataFrame(
+        data = df_traces_curr['Time (s)'], columns = df_traces_curr.columns)
 #%%
 def movement_analysis(df, df_ref, pthresh = 0.99, px2cm = 490/30, framerate = 10):
     df['head_x']=np.nan
@@ -172,10 +228,6 @@ for cell in plotevent.columns[1:]: # Calculate event map for each cell
     dfrtgs=pd.DataFrame(dfrtgs/np.nanmax(dfrtgs.max())) # Normalize
     #dfrtgs.mask(dfrtgs<0.5,0,inplace=True) # Filter out bins with activity < 0.5 peak
     CellMaps['session' + str(session)][cell + 's'] = dfrtgs.to_json(orient='columns') # Save resulting map into JSON string for storage
-#%%
-create_savepath(r'C:\Users\owner\PlaceCell\SampleData')
-read_inputs(r'C:\Users\owner\PlaceCell\SampleData')
-df_motion_new = movement_analysis(df_motion,df_traces)
 #%% Define functions
 def PlotTraces(data, cells: list, gap = 0, scalebar = 0, legend = 0):
     dftmp=pd.read_csv(os.path.join(DataDir,data))
