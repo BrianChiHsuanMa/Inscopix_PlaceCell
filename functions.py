@@ -18,58 +18,22 @@ import os
 import json
 import random
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
-#%% run block
-savepath = create_savepath(r'C:\Users\owner\PlaceCell\SampleData')
-df_traces, df_events, df_gpio, processed, n_sessions = read_inputs(
-    r'C:\Users\owner\PlaceCell\SampleData')
-traces_start, traces_end, vid_start, vid_end = process_GPIO(df_gpio)
-process_calcium(df_traces, df_events, processed, n_sessions)
-for s in range(n_sessions):
-    df_move = movement_analysis(processed['df_vid' + str(s)],
-                                processed['df_traces' + str(s)])
-    processed['df_move' + str(s)] = df_move.copy()
-
-x_lens = [490, 490, 490, 490, 490]
-x_bounds = [60, 75, 60, 80, 70]
-y_lens = [480,480,480,480,480]
-y_bounds = [0, 0, 0, 0, 0]
-cellmaps_all = {}
-cellmaps_first = {}
-cellmaps_second = {}
-for s in range(n_sessions):
-    df_events_curr = processed['df_events' + str(s)]
-    df_move_curr = processed['df_move' + str(s)]
-    cellmaps_all_curr = calculate_cellmap(df_events_curr, df_move_curr,
-                                          x_bounds[s], x_lens[s], y_bounds[s],
-                                          y_lens[s], half = 'all')
-    cellmaps_all['session' + str(s)] = cellmaps_all_curr
-    cellmaps_first_curr = calculate_cellmap(df_events_curr, df_move_curr,
-                                            x_bounds[s], x_lens[s], y_bounds[s],
-                                            y_lens[s], half = 'first')
-    cellmaps_first['session' + str(s)] = cellmaps_first_curr
-    cellmaps_second_curr = calculate_cellmap(df_events_curr, df_move_curr,
-                                             x_bounds[s], x_lens[s], y_bounds[s],
-                                             y_lens[s], half = 'second')
-    cellmaps_second['session' + str(s)] = cellmaps_second_curr
-    
-for s in cellmaps_first.keys():
-    df_placecell = placecell_identification(cellmaps_first[s], cellmaps_second[s])
-    df_placecell.to_csv(os.path.join(savepath, s + ' Place Cell Identification.csv'))
 #%%
 def create_savepath(data_dir):
-    '''
-    Creates a subfolder underneath the indicated directory to store output files
+    """
+    Creates a subfolder underneath the indicated directory to store outputs.
 
     Parameters
     ----------
-    data_dir : string
-        The indicated directory
+    data_dir : path
+        Where the data are stored.
 
     Returns
     -------
-    None.
+    savepath : path
+        Directory to store output files.
 
-    '''
+    """
     savepath = os.path.join(data_dir, 'processed')
     if not os.path.exists(savepath):
         os.mkdir(savepath)
@@ -78,27 +42,28 @@ def create_savepath(data_dir):
 
 def read_inputs(data_dir, use_denoise = True):
     '''
-    Read all csv files in directory into Dataframes
+    Read all csv files in directory into Dataframes.
 
     Parameters
     ----------
     data_dir : path
-        Path to dir where the files are saved.
+        Where the data are stored.
     use_denoise : boolean, optional
         Whether to use the denoised traces. The default is True.
 
     Returns
     -------
-    df_traces : Dataframe
-        DESCRIPTION.
-    df_events : Dataframe
-        DESCRIPTION.
-    df_gpio : Dataframe
-        DESCRIPTION.
-    sessions : dictionary
-        DESCRIPTION.
+    df_traces : DataFrame
+        DataFrame containing calcium activity information.
+    df_events : DataFrame
+        DataFrame containing spiking information.
+    df_gpio : DataFrame
+        DataFrame containing temporal information.
+    processed : dictionary
+        Dictionary containing processed data. At this stage it will store the
+        processed motion detection data, stored in DataFrames.
     n_sessions : integer
-        DESCRIPTION.
+        Number of video recording sessions.
 
     '''
     files = os.listdir(data_dir)
@@ -125,7 +90,29 @@ def read_inputs(data_dir, use_denoise = True):
             
     return df_traces, df_events, df_gpio, processed, n_sessions
       
-def process_GPIO(df_gpio):
+def process_GPIO(df_gpio, n_sessions):
+    """
+    Extract temporal information from the GPIO file.
+
+    Parameters
+    ----------
+    df_gpio : DataFrame
+        DataFrame containing temporal information.
+    n_sessions : integer
+        Number of video recording sessions.
+
+    Returns
+    -------
+    traces_start : Series
+        Starting time of all calcium recording sessions.
+    traces_end : Series
+        Ending time of all calcium recording sessions.
+    vid_start : Series
+        Starting time of all video recording sessions.
+    vid_end : Series
+        Ending time of all calcium recording sessions.
+
+    """
     df_gpio[['Time (s)',' Value']] = df_gpio[['Time (s)',' Value']].astype(float)
 
     # Find calcium recording sessions start and end time
@@ -138,7 +125,6 @@ def process_GPIO(df_gpio):
     
     # Find behavioural video start and end time
     df_gpio_vid = df_gpio.loc[df_gpio[' Channel Name']==' BNC Trigger Input']
-    #motion_delay = df_gpio_motion.iloc[1]['Time (s)']
     vid_start = df_gpio_vid.loc[df_gpio_vid[' Value'] > 0]['Time (s)'] - traces_delay
     vid_end = df_gpio_vid.loc[vid_start.index + 1]['Time (s)'] - traces_delay
     vid_start.reset_index(inplace = True, drop = True)
@@ -154,7 +140,31 @@ def process_GPIO(df_gpio):
     
     return traces_start, traces_end, vid_start, vid_end
 
-def process_calcium(df_traces, df_events, processed, n_sessions):
+def process_calcium(df_traces, df_events, processed, n_sessions, traces_start, traces_end):
+    """
+    Split calcium and spiking data into separate sessions, and store the 
+    outputs in the "processed" dictionary.
+
+    Parameters
+    ----------
+    df_traces : DataFrame
+        DataFrame containing calcium activity information.
+    df_events : TYPE
+        DataFrame containing spiking information.
+    processed : TYPE
+        Dictionary where the processed data will be stored.
+    n_sessions : TYPE
+        Number of sessions.
+    traces_start : TYPE
+        Starting time of all calcium recording sessions.
+    traces_end : TYPE
+        Ending time of all calcium recording sessions.
+
+    Returns
+    -------
+    None.
+
+    """
     for cell in df_traces.columns:
         if df_traces[cell][0] == ' rejected':
             df_traces.drop(columns=[cell], inplace=True)
@@ -182,6 +192,30 @@ def process_calcium(df_traces, df_events, processed, n_sessions):
         processed['df_events' + str(s)] = df_events_curr
 
 def movement_analysis(df_vid, df_ref, pthresh = 0.99, px2cm = 490/30, framerate = 10):
+    """
+    Calculate actual position and speed from a motion detection data.
+
+    Parameters
+    ----------
+    df_vid : DataFrame
+        DataFrame containing motion detection data.
+    df_ref : DataFrame
+        DataFrame whose temporal information will be used as reference.
+        Ideally this should be the calcium data from the same session.
+    pthresh : float, optional
+        Threshold to filter motion detection results. The default is 0.99.
+    px2cm : float, optional
+        Conversion ratio for pixel to cm. The default is 490/30.
+    framerate : int, optional
+        Frame rate in which the data used as reference (df_ref) is captured.
+        The default is 10.
+
+    Returns
+    -------
+    df_new : DataFrame
+        DataFrame containing the processed motion data.
+
+    """
     df_vid['head_x']=np.nan
     df_vid['head_x'].loc[(df_vid['neck_likelihood']>=pthresh)] = df_vid['neck_x']
     df_vid['head_x'].loc[(df_vid['left ear_likelihood']>=pthresh) &
@@ -210,19 +244,51 @@ def movement_analysis(df_vid, df_ref, pthresh = 0.99, px2cm = 490/30, framerate 
     
     return df_new
 
-def calculate_cellmap(df_events, df_move, x_bound, x_len,
-                      y_bound, y_len, n_grid = 30, half = 'all'):
-    
-    cellmaps = {}
+def calculate_placemap(df_events, df_move, x_bound, x_len, y_bound,
+                      y_len, n_grid = 30, half = 'all'):
+    """
+    Calculate place fields based on spiking and motion data.
+
+    Parameters
+    ----------
+    df_events : DataFrame
+        DataFrame containing spiking information. Requires the processed form.
+    df_move : DataFrame
+        DataFrame containing motion data.
+    x_bound : int
+        Left boundary of the arena in the captured video, in pixels.
+    x_len : int
+        Length of the arena on the x axis, in pixels.
+    y_bound : TYPE
+        Upper bondary of the arena in the captured video, in pixels.
+    y_len : TYPE
+        Length of the arena on the y axis, in pixels.
+    n_grid : int, optional
+        Number of grids to seperate the arena into, on each axis.
+        The default is 30, producing a 30x30 grid.
+    half : str, optional
+        Which half of the session to be used. The default is 'all'.
+        Accepted values:
+            'all': The entire session.
+            'first': The first half.
+            'second': The second half.
+
+    Returns
+    -------
+    placemaps : dict
+        Dictonary containing calculated placemaps for each cell.
+
+    """
+    placemaps = {}
     grid_x, grid_y = x_len/n_grid, y_len/n_grid
     df_zero = pd.DataFrame(0, columns = [i for i in range(n_grid)],
                            index = [i for i in range(n_grid)])
     df_occ = df_zero.copy()
     ind_mid = int(df_events.shape[0]/2)
-    
     df_grid = pd.DataFrame({'x': (df_move['head_x'] - x_bound)//grid_x,
                            'y': (df_move['head_y'] - y_bound)//grid_y})
     ind_occ = df_grid.loc[df_grid['x'].between(0, 29)].loc[df_grid['y'].between(0, 29)].index
+    
     if half == 'first':
         for i in ind_occ.intersection(df_grid.index[:ind_mid]):
             df_occ.at[df_grid.loc[i, 'y'],df_grid.loc[i, 'x']] += 1
@@ -232,10 +298,9 @@ def calculate_cellmap(df_events, df_move, x_bound, x_len,
     elif half == 'all':
         for i in ind_occ:
             df_occ.at[df_grid.loc[i, 'y'],df_grid.loc[i, 'x']] += 1
-
     df_occ.replace(0, np.nan, inplace=True) # Ignore unvisited bins
         
-    for cell in df_events.columns[1:]: # Calculate event map for each cell
+    for cell in df_events.columns[1:]:
         df_spk = df_zero.copy()
         ind_spk = df_events.loc[df_events[cell] > 0].index
         ind_run = df_move.loc[df_move['Speed'] >= 0.5].index
@@ -253,28 +318,46 @@ def calculate_cellmap(df_events, df_move, x_bound, x_len,
         df_rate.replace(np.nan,0,inplace=True)
         df_rate = gaussian_filter(df_rate, sigma = 2.5, truncate=2.0) # Gaussian smoothing with delta = 2.5 cm, 3*3 window
         df_rate = pd.DataFrame(df_rate/np.nanmax(df_rate.max()))
-        #CellMaps['session' + str(session)][cell + 's1'] = dfrtgs.to_json(orient='columns')
-        cellmaps[cell] = df_rate
+        placemaps[cell] = df_rate
     
-    return cellmaps
-#%% Place cell identification with stability method
-def placecell_identification(cellmaps_first_curr, cellmaps_second_curr):
-    maps1 = [i for i in cellmaps_first_curr.keys()]
-    maps2 = [i for i in cellmaps_second_curr.keys()]
+    return placemaps
+
+def placecell_identification(placemaps_first_curr, placemaps_second_curr):
+    """
+    Perform place cell identification based on stability method.
+
+    Parameters
+    ----------
+    placemaps_first_curr : dict
+        Dictionary containing place maps of each cell, calculated from the
+        first half of a session.
+    placemaps_second_curr : dict
+        Dictionary containing place maps of each cell, calculated from the
+        second half of a session.
+
+    Returns
+    -------
+    df_placecell : DataFrame
+        DataFrame containing place cell identification results
+        (correlation score, threshold, place cell status).
+
+    """
+    maps1 = [i for i in placemaps_first_curr.keys()]
+    maps2 = [i for i in placemaps_second_curr.keys()]
     corr_scores = []
     thresholds = []
     is_placecell = []
     
     for k1 in maps1:
-        map1 = cellmaps_first_curr[k1].to_numpy().flatten()
-        map2 = cellmaps_second_curr[k1].to_numpy().flatten()
+        map1 = placemaps_first_curr[k1].to_numpy().flatten()
+        map2 = placemaps_second_curr[k1].to_numpy().flatten()
         corr_score = np.corrcoef(map1, map2)[0][1]
         corr_scores.append(corr_score)
-        
         random_score = []
+        
         for n in range(500):
             k2 = maps2[random.randint(0,len(maps2)-1)]
-            map2 = cellmaps_second_curr[k2].to_numpy().flatten()
+            map2 = placemaps_second_curr[k2].to_numpy().flatten()
             random_score.append(np.corrcoef(map1, map2)[0][1])
         threshold = np.nanpercentile(random_score, 95)
         thresholds.append(threshold)
@@ -288,30 +371,3 @@ def placecell_identification(cellmaps_first_curr, cellmaps_second_curr):
                                 columns = maps1, index = ['Score', 'P95', 'Is place cell?'])
     
     return df_placecell    
-#%%
-dfcorr=pd.DataFrame(columns=[i[:4] for i in CellMaps['session0'].keys() if i.endswith('s1') and i!='Occupancys1'])
-dfcorr['row']=[]
-for n,s in enumerate([k for k in CellMaps.keys() if k != 'day']):
-    dfcorr.loc[n*3,'row']='Threshold '+s
-    dfcorr.loc[n*3+1,'row']='Correlation '+s
-    dfcorr.loc[n*3+2,'row']='Status '+s
-    maps1=[i for i in CellMaps[s].keys() if i.endswith('s1') and i!='Occupancys1']
-    maps2=[i for i in CellMaps[s].keys() if i.endswith('s2') and i!='Occupancys2']
-    for k in maps1:
-        corrlist=[]
-        map1 = pd.read_json(CellMaps[s][k]).to_numpy().flatten()
-        for i in range(500):
-            k2 = maps2[random.randint(0,len(maps2)-1)]
-            map2 = pd.read_json(CellMaps[s][k2]).to_numpy().flatten()
-            corrlist.append(np.corrcoef(map1,map2)[0][1])
-        p95 = np.nanpercentile(corrlist,95)
-        dfcorr.loc[n*3,k[:4]]=p95
-        k2 = k[:-1]+'2'
-        map2 = pd.read_json(CellMaps[s][k2]).to_numpy().flatten()
-        dfcorr.loc[n*3+1,k[:4]]=np.corrcoef(map1,map2)[0][1]
-        if np.corrcoef(map1,map2)[0][1]>p95:
-            dfcorr.loc[n*3+2,k[:4]]='Accepted'
-        else:
-            dfcorr.loc[n*3+2,k[:4]]='Rejected'
-dfcorr.set_index('row',inplace=True)
-dfcorr.to_csv(CellMaps['day']+' Place Cell Identification.csv')
