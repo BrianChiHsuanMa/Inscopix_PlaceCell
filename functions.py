@@ -1,23 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Dec  5 15:09:36 2022
-
-@author: SunLab
-"""
 #%% Importing packages
 import pandas as pd
-from pathlib import Path  # to work with dir
-import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
-import statistics as st
 from scipy.ndimage import gaussian_filter
-from scipy import signal
-from scipy import stats
 import os
-import json
 import random
-from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 #%%
 def create_savepath(data_dir):
     """
@@ -140,7 +126,8 @@ def process_GPIO(df_gpio, n_sessions):
     
     return traces_start, traces_end, vid_start, vid_end
 
-def process_calcium(df_traces, df_events, processed, n_sessions, traces_start, traces_end):
+def process_calcium(df_traces, df_events, processed, n_sessions, traces_start,
+                    traces_end):
     """
     Split calcium and spiking data into separate sessions, and store the 
     outputs in the "processed" dictionary.
@@ -185,10 +172,12 @@ def process_calcium(df_traces, df_events, processed, n_sessions, traces_start, t
         ind_start = (df_traces['Time (s)'] - traces_start[s]).abs().argsort()[0]
         ind_end = (df_traces['Time (s)'] - traces_end[s]).abs().argsort()[0]
         df_traces_curr = df_traces[ind_start:ind_end+1].copy().reset_index(drop=True)
-        df_traces_curr['Time (s)'] = df_traces_curr['Time (s)'] - df_traces_curr['Time (s)'][0]
+        df_traces_curr['Time (s)'] = (df_traces_curr['Time (s)'] -
+                                      df_traces_curr['Time (s)'][0])
         processed['df_traces' + str(s)] = df_traces_curr
         df_events_curr = df_events_expand[ind_start:ind_end+1].copy().reset_index(drop=True)
-        df_events_curr['Time (s)'] = df_events_curr['Time (s)'] - df_events_curr['Time (s)'][0]
+        df_events_curr['Time (s)'] = (df_events_curr['Time (s)'] -
+                                      df_events_curr['Time (s)'][0])
         processed['df_events' + str(s)] = df_events_curr
 
 def movement_analysis(df_vid, df_ref, pthresh = 0.99, px2cm = 490/30, framerate = 10):
@@ -217,35 +206,37 @@ def movement_analysis(df_vid, df_ref, pthresh = 0.99, px2cm = 490/30, framerate 
 
     """
     df_vid['head_x']=np.nan
-    df_vid['head_x'].loc[(df_vid['neck_likelihood']>=pthresh)] = df_vid['neck_x']
-    df_vid['head_x'].loc[(df_vid['left ear_likelihood']>=pthresh) &
-                     (df_vid['right ear_likelihood']>=pthresh)] = (df_vid['left ear_x'] + df_vid['right ear_x'])/2
+    df_vid['head_x'].loc[(df_vid['neck_likelihood'] >= pthresh)] = df_vid['neck_x']
+    df_vid['head_x'].loc[(df_vid['left ear_likelihood'] >= pthresh) &
+                     (df_vid['right ear_likelihood'] >= pthresh)] = (df_vid['left ear_x'] + df_vid['right ear_x'])/2
     df_vid['head_y']=np.nan
-    df_vid['head_y'].loc[(df_vid['neck_likelihood']>=pthresh)] = df_vid['neck_y']
-    df_vid['head_y'].loc[(df_vid['left ear_likelihood']>=pthresh) & 
-                     (df_vid['right ear_likelihood']>=pthresh)] = (df_vid['left ear_y'] + df_vid['right ear_y'])/2
+    df_vid['head_y'].loc[(df_vid['neck_likelihood'] >= pthresh)] = df_vid['neck_y']
+    df_vid['head_y'].loc[(df_vid['left ear_likelihood'] >= pthresh) & 
+                     (df_vid['right ear_likelihood'] >= pthresh)] = (df_vid['left ear_y'] + df_vid['right ear_y'])/2
     
     df_vid['head_x'].interpolate(inplace=True)
     df_vid['head_y'].interpolate(inplace=True)
     
     newtime = list(np.linspace(df_vid.index[0], df_vid.index[-1], df_ref.shape[0]))
-    df_new = pd.DataFrame(data = df_ref['Time (s)'], columns = ['Time (s)', 'head_x', 'head_y'])
-    df_new['head_x'] = np.interp(newtime,df_vid.index,df_vid['head_x'])
-    df_new['head_y'] = np.interp(newtime,df_vid.index,df_vid['head_y'])
-    df_new['head_x'] = df_new['head_x'].rolling(window=5,center=True).mean()
-    df_new['head_y'] = df_new['head_y'].rolling(window=5,center=True).mean()
+    df_new = pd.DataFrame(data = df_ref['Time (s)'],
+                          columns = ['Time (s)', 'head_x', 'head_y'])
+    df_new['head_x'] = np.interp(newtime, df_vid.index, df_vid['head_x'])
+    df_new['head_y'] = np.interp(newtime, df_vid.index, df_vid['head_y'])
+    df_new['head_x'] = df_new['head_x'].rolling(window = 5, center = True).mean()
+    df_new['head_y'] = df_new['head_y'].rolling(window = 5, center = True).mean()
     
     speed = [np.nan]
     for i in df_new.index[:-1]:
-        currspd = (((df_new.loc[i+1,'head_x']-df_new.loc[i,'head_x'])**2 + 
-                    (df_new.loc[i+1,'head_y']-df_new.loc[i,'head_y'])**2)**0.5) / px2cm * framerate
+        currspd = (((df_new.loc[i+1, 'head_x'] - df_new.loc[i, 'head_x'])**2 + 
+                    (df_new.loc[i+1, 'head_y'] - df_new.loc[i, 'head_y'])**2)**0.5)
+        currspd = currspd / (px2cm * framerate)
         speed.append(currspd)
     df_new['Speed']=speed
     
     return df_new
 
-def calculate_placemap(df_events, df_move, x_bound, x_len, y_bound,
-                      y_len, n_grid = 30, half = 'all'):
+def calculate_placemap(df_events, df_move, x_bound = 0, x_len = 480,
+                       y_bound = 0, y_len = 480, n_grid = 30, half = 'all'):
     """
     Calculate place fields based on spiking and motion data.
 
@@ -257,12 +248,14 @@ def calculate_placemap(df_events, df_move, x_bound, x_len, y_bound,
         DataFrame containing motion data.
     x_bound : int
         Left boundary of the arena in the captured video, in pixels.
+        The default is 0.
     x_len : int
-        Length of the arena on the x axis, in pixels.
+        Length of the arena on the x axis, in pixels. The default is 480.
     y_bound : TYPE
         Upper bondary of the arena in the captured video, in pixels.
+        The default is 0.
     y_len : TYPE
-        Length of the arena on the y axis, in pixels.
+        Length of the arena on the y axis, in pixels. The default is 480.
     n_grid : int, optional
         Number of grids to seperate the arena into, on each axis.
         The default is 30, producing a 30x30 grid.
@@ -316,7 +309,7 @@ def calculate_placemap(df_events, df_move, x_bound, x_len, y_bound,
 
         df_rate = df_spk / df_occ
         df_rate.replace(np.nan,0,inplace=True)
-        df_rate = gaussian_filter(df_rate, sigma = 2.5, truncate=2.0) # Gaussian smoothing with delta = 2.5 cm, 3*3 window
+        df_rate = gaussian_filter(df_rate, sigma = 2.5, truncate=2.0) # Gaussian smoothing with delta = 2.5, 3*3 window
         df_rate = pd.DataFrame(df_rate/np.nanmax(df_rate.max()))
         placemaps[cell] = df_rate
     
@@ -368,6 +361,57 @@ def placecell_identification(placemaps_first_curr, placemaps_second_curr):
             is_placecell.append('Rejected')
     
     df_placecell = pd.DataFrame([corr_scores, thresholds, is_placecell],
-                                columns = maps1, index = ['Score', 'P95', 'Is place cell?'])
+                                columns = maps1,
+                                index = ['Score', 'P95', 'Is place cell?'])
     
-    return df_placecell    
+    return df_placecell
+
+def calculate_similarity(placemaps, session1, session2, savepath):
+    """
+    Calculate similarity scores for identified place cells between two sessions.
+    
+    The function reads place cell identification results from the two indicated
+    sessions, and thus requires place cell identification to be done for both
+    sessions prior to running it.
+    
+
+    Parameters
+    ----------
+    placemaps : dict
+        Dictonary containing calculated placemaps for each cell.
+    session1 : str
+        First session to be compared.
+        Format = 'sessionx', with x being an int.
+    session2 : str
+        Second session to be compared.
+        Format = 'sessionx', with x being an int.
+    savepath : path
+        Directory where the place cell identification results are stored.
+
+    Returns
+    -------
+    df_sim : DataFrame
+        DataFrame containing similarity scores.
+
+    """
+    fname_PCID_1 = os.path.join(savepath, session1 + ' Place Cell Identification.csv')
+    fname_PCID_2 = os.path.join(savepath, session2 + ' Place Cell Identification.csv')
+    df_placecell_1 = pd.read_csv(fname_PCID_1, index_col = 0)
+    df_placecell_2 = pd.read_csv(fname_PCID_2, index_col = 0)
+    
+    placecell_list = (df_placecell_1.T.loc[df_placecell_1.loc['Is place cell?']=='Accepted'].index.tolist() +
+                      df_placecell_2.T.loc[df_placecell_2.loc['Is place cell?']=='Accepted'].index.tolist())
+    placecell_list = list(set(placecell_list))
+    placecell_list.sort()
+
+    df_sim = pd.DataFrame(columns = placecell_list, index = ['Score'])
+    
+    for cell in placecell_list:
+        map1 = placemaps[session1][cell].to_numpy().flatten()
+        map2 = placemaps[session2][cell].to_numpy().flatten()
+        if np.isnan(np.corrcoef(map1,map2)[0][1]):
+            df_sim.drop(columns = cell,inplace=True)
+        else:
+            df_sim.loc['Score', cell] = np.corrcoef(map1, map2)[0][1]
+    
+    return df_sim
