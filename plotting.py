@@ -1,140 +1,232 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Jun 13 18:00:19 2023
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+import os
+from sklearn.preprocessing import MinMaxScaler
 
-@author: owner
-"""
+def plot_movement(data, n_sessions, x_res, y_res, savepath):
+    """
+    Plot the movement of the animal in each session.
 
-#%%
-plotsession = CalciumData[plotday]['Traces']['session'+str(session)].copy()
-indmid = int(len(plotsession.index)*0.5)
-xlen = xlens[session]
-xbound = xbounds[session]
-xgridlen=xlen/30
-dfzero = pd.DataFrame(0, columns = [i for i in range(30)],index = [i for i in range(30)])
-dfoc = dfzero.copy()
-for i in plotsession.index: # Calculate occupancy
-    xgrid = (plotsession.loc[i]['x'] - xbound)//xgridlen
-    if xgrid < 0 or xgrid > 29: # Skip out of boundary data
-        continue
-    ygrid = plotsession.loc[i]['y']//16
-    if ygrid < 0 or ygrid > 29:
-        continue
-    try:
-        dfoc.at[ygrid,xgrid] += 1
-    except KeyError:
-        print(i)
-dfoc.replace(0,np.nan,inplace=True) # Ignore unvisited bins
-CellMaps['session' + str(session)]['Occupancys'] = dfoc.to_json(orient='columns')
+    Parameters
+    ----------
+    data : dict
+        The processed data.
+    n_sessions : int
+        Number of sessions.
+    x_res : int
+        Resolution on x axis, in pixels.
+    y_res : int
+        Resolution on y axis, in pixels.
+    savepath : path
+        Path where the output figures will be saved.
 
-for cell in plotevent.columns[1:]: # Calculate event map for each cell
-    dfhm = dfzero.copy()
-    indeventspre = plotevent[indst[session]:indet[session]+1].loc[plotevent[cell]> 0.0].index.tolist() # Grab index of events
-    indevents = [i - indst[session] for i in indeventspre]
-    for i in indevents:
-        if plotsession['Speed'].loc[i] > 0.5: # Only count when speed > 0.5
-            xgrid = (plotsession.loc[i]['x'] - xbound)//xgridlen
-            if xgrid < 0 or xgrid > 29: # Skip out of boundary data
-                continue
-            ygrid = plotsession.loc[i]['y']//16
-            if ygrid < 0 or ygrid > 29:
-                continue
-            dfhm.at[ygrid,xgrid] += plotevent.loc[i+indst[session]][cell]
-    dfrt = dfhm/dfoc
-    dfrt.replace(np.nan,0,inplace=True)
-    dfrtgs=gaussian_filter(dfrt,sigma=2.5,truncate=2.0) # Gaussian smoothing with delta = 2.5 cm, 3*3 window
-    dfrtgs=pd.DataFrame(dfrtgs/np.nanmax(dfrtgs.max())) # Normalize
-    #dfrtgs.mask(dfrtgs<0.5,0,inplace=True) # Filter out bins with activity < 0.5 peak
-    CellMaps['session' + str(session)][cell + 's'] = dfrtgs.to_json(orient='columns') # Save resulting map into JSON string for storage
-#%% Define functions
-def PlotTraces(data, cells: list, gap = 0, scalebar = 0, legend = 0):
-    dftmp=pd.read_csv(os.path.join(DataDir,data))
+    Returns
+    -------
+    None.
 
-    dftmp.drop(index=0,inplace=True)
-    dftmp = dftmp.reset_index(drop=True) # Reset index
-    dftmp = dftmp.astype(float) # Convert values to float
-    if gap == 1:
-        for i in dftmp.index[:-1]: # Find gaps
-            if np.diff(dftmp.iloc[:,0])[i]>np.median(np.diff(dftmp.iloc[:,0]))+2:
-                dftmp.iloc[i+1:,0]-=(np.diff(dftmp.iloc[:,0])[i]-np.median(np.diff(dftmp.iloc[:,0])))
-    for i in dftmp.columns[1:]: # Normalization
-        #dftmp[i] = dftmp[i]/(dftmp[i].max()) # Normalize activity
-        dftmp[i] = stats.zscore(dftmp[i]) # Z-score activity
-    fig, ax = plt.subplots()
-    for n,i in enumerate(cells):
-        ax.plot(dftmp.iloc[:,0],dftmp[i]+(n+1)*10,label=n+1)
-    if scalebar == 1:
-        barx = AnchoredSizeBar(ax.transData, 10, '10 s', 'lower right',
-                          frameon=False, 
-                          bbox_transform=ax.transAxes, bbox_to_anchor=(1.05,0),
-                          color='black')
-        bary = AnchoredSizeBar(ax.transData, 0.1, '10 sd', 'lower right',
-                          frameon=False, size_vertical = 10, label_top = True,
-                          bbox_transform=ax.transAxes, bbox_to_anchor=(1.1,0.05),
-                          color='black')
-        ax.add_artist(barx)
-        ax.add_artist(bary)
-    if legend == 1:
-        handles, labels = ax.get_legend_handles_labels()
-        ax.legend(reversed(handles), reversed(labels), loc='upper right', bbox_to_anchor=(1.25,1), fancybox=True, shadow=True)
-    ax.axis('off')
-    ax.get_yaxis().set_visible(False)
-    ax.get_xaxis().set_visible(False)
-    ax.set_ylim(0,len(cells)*10+15)
+    """
+    for s in range(n_sessions):
+        df_plot = data['df_move' + str(s)]
+        ind_mid = int(df_plot.shape[0]/2)
+        
+        plt.figure()
+        sns.lineplot(x = df_plot['head_x'], y = df_plot['head_y'], sort = False,
+                     lw=1)
+        plt.title('Trajectory session' + str(s))
+        plt.ylim(y_res, 0)
+        plt.xlim(0, x_res)
+        plt.savefig(os.path.join(savepath, 'Movement trajectory session' +
+                                 str(s) + '.png'))
+        
+        plt.figure()
+        sns.lineplot(x = df_plot[:ind_mid]['head_x'],y = df_plot[:ind_mid]['head_y'],
+                     sort = False, lw = 1)
+        plt.title('Trajectory session' + str(s) + ' 1st')
+        plt.ylim(y_res, 0)
+        plt.xlim(0, x_res)
+        plt.savefig(os.path.join(savepath, 'Movement trajectory session' +
+                                 str(s) + ' 1st.png'))
+        
+        plt.figure()
+        sns.lineplot(x = df_plot[ind_mid:]['head_x'], y = df_plot[ind_mid:]['head_y'],
+                     sort = False, lw = 1)
+        plt.title('Trajectory session' + str(s) + ' 2nd')
+        plt.ylim(y_res, 0)
+        plt.xlim(0, x_res)
+        plt.savefig(os.path.join(savepath, 'Movement trajectory session' +
+                                 str(s) + ' 2nd.png'))
 
-def PlotTracesLR(data,gap: int):
-    fig=plt.figure()
-    ax = plt.subplot(111)
-    dftmp=pd.read_csv(os.path.join(DataDir,data))
-    dftmp.drop(index=0,inplace=True)
-    dftmp = dftmp.reset_index(drop=True) # Reset index
-    dftmp = dftmp.astype(float) # Convert values to float
-    if gap==1:
-        for i in dftmp.index[:-1]: # Find gaps
-            if np.diff(dftmp.iloc[:,0])[i]>np.median(np.diff(dftmp.iloc[:,0]))+10000:
-                dftmp.iloc[i+1:,0]-=(np.diff(dftmp.iloc[:,0])[i]-np.median(np.diff(dftmp.iloc[:,0])))
-                plt.axvline(x=dftmp.iloc[i,0],ymin=0, ymax=len(dftmp.columns))
-            elif np.diff(dftmp.iloc[:,0])[i]>np.median(np.diff(dftmp.iloc[:,0]))+2:
-                dftmp.iloc[i+1:,0]-=(np.diff(dftmp.iloc[:,0])[i]-np.median(np.diff(dftmp.iloc[:,0])))
-    for i in dftmp.columns[1:]: # Normalization
-        dftmp[i] = dftmp[i]/(dftmp[i].max()) # Normalize activity
-    for n,i in enumerate(dftmp.columns[1:]):
-        ax.plot(dftmp.iloc[:,0],dftmp.iloc[:,i+1]+n,label=i)
-    handles, labels = ax.get_legend_handles_labels()
-    ax.legend(reversed(handles), reversed(labels),loc='upper right', bbox_to_anchor=(1.25, 1.05), fancybox=True, shadow=True)
-    ax.get_yaxis().set_visible(False)
+def plot_speed_hist(data, n_sessions, savepath):
+    """
+    Plot distribution of speed in each session. Unit is cm/s.
+
+    Parameters
+    ----------
+    data : dict
+        The processed data.
+    n_sessions : int
+        Number of sessions.
+    savepath : path
+        Path where the output figures will be saved.
+
+    Returns
+    -------
+    None.
+
+    """
+    for s in range(n_sessions):
+        df_move = data['df_move' + str(s)]
+        plt.figure()
+        sns.displot(data = df_move, x = 'Speed', kde = True, stat 
+                    = 'probability', binwidth = 0.5, height = 5, aspect = 2)
+        plt.title('Speed distribution session' + str(s))
+        plt.savefig(os.path.join(savepath, 'Speed distribution session' +
+                                 str(s) + '.png'), bbox_inches='tight')
+
+def plot_events(data, n_sessions, x_res, y_res, savepath, cells = []):
+    """
     
-def PlotTracesMIRA(data,gap: int):
-    fig=plt.figure()
+
+    Parameters
+    ----------
+    data : dict
+        The processed data.
+    n_sessions : int
+        Number of sessions.
+    x_res : int
+        Resolution on x axis, in pixels.
+    y_res : int
+        Resolution on y axis, in pixels.
+    savepath : path
+        Path where the output figures will be saved.
+    cells : list, optional
+        List of cells whose spiking events will be plotted.
+        The default is [], which will plot all the cells.
+
+    Returns
+    -------
+    None.
+
+    """
+    for s in range(n_sessions):
+        df_events = data['df_events' + str(s)]
+        df_move = data['df_move' + str(s)]
+        
+        if not cells:
+            cells = df_events.columns[1:].to_list()
+            
+        for cell in cells:
+            plt.figure()
+            ax = plt.subplot(111)
+            ax.axis('off')
+            ind_spk = df_events.loc[df_events[cell] > 0].index
+            ind_run = df_move.loc[df_move['Speed'] >= 0.5].index
+            ind_plot = ind_spk.intersection(ind_run)
+    
+            sns.lineplot(x = df_move['head_x'], y = df_move['head_y'],
+                         sort = False, lw = 1)
+            plt.plot(df_move.loc[ind_plot, 'head_x'], df_move.loc[ind_plot, 'head_y'],
+                     'ro', markersize=5)
+            plt.title('Events session' + str(s) + cell)
+            plt.ylim(y_res, 0)
+            plt.xlim(0, x_res)
+            plt.tight_layout()
+            plt.savefig(os.path.join(savepath, cell + ' Events session' +
+                                     str(s) + '.png'))
+
+def plot_traces(data, session, savepath, place_cell_only = True, cell_list = []):
+    """
+    Plot calcium traces and speed with time.
+
+    Parameters
+    ----------
+    data : dict
+        The processed data.
+    session : str
+        The session to be plotted.
+        Format = 'sessionx', with x being an int.
+    savepath : path
+        Path where the output figures will be saved.
+    place_cell_only : bool, optional
+        Whether to plot the place cells only.
+        The default is True, which will only plot the identified place cells
+        of that session. This will also override cell_list
+    cell_list : list, optional
+        List of cells to plot. The default is [].
+
+    Returns
+    -------
+    None.
+
+    """
+    if place_cell_only:
+        fname_PCID = os.path.join(savepath, session + ' Place Cell Identification.csv')
+        df_placecell = pd.read_csv(fname_PCID, index_col = 0)
+        cell_list = (df_placecell.T.loc[df_placecell.loc['Is place cell?']=='Accepted'].index.tolist())
+        cell_list.sort()
+        
+    s = session[-1]
+    df_traces = data['df_traces' + s]
+    df_move = data['df_move' + s]
+    
+    scaler = MinMaxScaler()
+    df_traces_scale = pd.DataFrame(scaler.fit_transform(df_traces.iloc[:, 1:]),
+                                 columns = df_traces.columns[1:],
+                                 index = df_traces.index)
+    
+    fig = plt.figure()
     ax = plt.subplot(111)
-    dftmp=pd.read_csv(os.path.join(DataDir,data))
-    dftmp.drop(index=0,inplace=True)
-    dftmp = dftmp.reset_index(drop=True) # Reset index
-    dftmp = dftmp.astype(float) # Convert values to float
-    if gap==1:
-        for i in dftmp.index[:-1]: # Find gaps
-            if np.diff(dftmp.iloc[:,0])[i]>np.median(np.diff(dftmp.iloc[:,0]))+2:
-                dftmp.iloc[i+1:,0]-=(np.diff(dftmp.iloc[:,0])[i]-np.median(np.diff(dftmp.iloc[:,0])))
-                plt.axvline(x=dftmp.iloc[i,0],ymin=0, ymax=len(dftmp.columns))
-    for i in dftmp.columns[1:]: # Normalization
-        dftmp[i] = dftmp[i]/(dftmp[i].max()) # Normalize activity
-    for n,i in enumerate([11,45,59,60,54]):
-        ax.plot(dftmp.iloc[:,0],dftmp.iloc[:,i+1]+n+1,label=n+1)
+    
+    for n, cell in enumerate(cell_list):
+        ax.plot(df_traces['Time (s)'], df_traces_scale[cell] + n, label = cell)
+    ax.plot(df_traces['Time (s)'], df_move['Speed'] / np.max(df_move['Speed'])
+            + n + 3, 'k', label = 'Speed')
+    
+    plt.xlabel('Time(s)')
+    plt.title('Traces ' + session)
     handles, labels = ax.get_legend_handles_labels()
-    bar = AnchoredSizeBar(ax.transData, 10, '10 s', 'lower right',
-                      frameon=False, color='black')
-    ax.add_artist(bar)
-    ax.legend(reversed(handles), reversed(labels),loc='upper right', bbox_to_anchor=(1.25, 1.05), fancybox=True, shadow=True)
+    ax.legend(reversed(handles), reversed(labels), loc = 'upper right',
+              bbox_to_anchor = (1.25, 1.05), fancybox = True, shadow = True)
     ax.get_yaxis().set_visible(False)
-    ax.get_xaxis().set_visible(False)
-    ax.set_ylim(0,6.5)
-#%% Test
-fig=plt.figure()
-ax = plt.subplot(111)
-bar = AnchoredSizeBar(ax.transData, 10, '10 s', 'lower right',
-                  frameon=False, color='black')
-bar2 = AnchoredSizeBar(ax.transData, 0.1, '10 sd', 'lower right',
-                  pad = 1, frameon=True, size_vertical = 10, label_top = True,
-                  color='black')
-ax.add_artist(bar)
-ax.add_artist(bar2)
+    plt.tight_layout()
+    
+    plt.savefig(os.path.join(savepath, 'Traces ' + session + '.png'))
+    
+def plot_map(maps, session, cell, savepath, half = 'all'):
+    """
+    Plot place map of a cell.
+
+    Parameters
+    ----------
+    maps : dict
+        Dictionary containing all the place maps.
+    session : str
+        The session to be plotted.
+        Format = 'sessionx', with x being an int.
+    cell : str
+        Name of the cell to be plotted.
+    savepath : path
+        Path where the output figures will be saved.
+    half : str, optional
+        Whether to plot the place map of half a session. The default is 'all'.
+        Accepted values:
+            'all': The entire session.
+            'first': The first half.
+            'second': The second half.
+
+    Returns
+    -------
+    None.
+
+    """
+    plt.figure()
+    ax = plt.subplot(111)
+    df_plot = maps[half][session][cell]
+    sns.heatmap(df_plot, square=True, cmap='plasma', vmin=0, vmax=1)
+    plt.title('Place map ' + session + cell + ' ' + half)
+    ax.axis('off')
+    plt.tight_layout()
+    plt.savefig(os.path.join(savepath, cell + ' Place map' + ' ' + session
+                             + '_' + half + '.png'))

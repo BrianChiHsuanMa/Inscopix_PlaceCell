@@ -1,10 +1,9 @@
-#%% Importing packages
 import pandas as pd
 import numpy as np
 from scipy.ndimage import gaussian_filter
 import os
 import random
-#%%
+
 def create_savepath(data_dir):
     """
     Creates a subfolder underneath the indicated directory to store outputs.
@@ -21,6 +20,7 @@ def create_savepath(data_dir):
 
     """
     savepath = os.path.join(data_dir, 'processed')
+    
     if not os.path.exists(savepath):
         os.mkdir(savepath)
         
@@ -55,6 +55,7 @@ def read_inputs(data_dir, use_denoise = True):
     files = os.listdir(data_dir)
     processed = {}
     n_sessions = 0
+    
     for file in files:
         if file.endswith('Denoise.csv') and use_denoise == True:
             df_traces = pd.read_csv(os.path.join(data_dir, file))
@@ -104,14 +105,17 @@ def process_GPIO(df_gpio, n_sessions):
     # Find calcium recording sessions start and end time
     df_gpio_traces = df_gpio.loc[df_gpio[' Channel Name']==' EX-LED']
     traces_delay = df_gpio_traces.iloc[1]['Time (s)']
-    traces_start = df_gpio_traces.loc[df_gpio_traces[' Value'] > 0]['Time (s)'] - traces_delay
-    traces_end = df_gpio_traces.loc[traces_start.index + 1]['Time (s)'] - traces_delay
+    traces_start = (df_gpio_traces.loc[df_gpio_traces[' Value'] > 0]['Time (s)']
+                    - traces_delay)
+    traces_end = (df_gpio_traces.loc[traces_start.index + 1]['Time (s)']
+                  - traces_delay)
     traces_start.reset_index(inplace = True, drop = True)
     traces_end.reset_index(inplace = True, drop = True)
     
     # Find behavioural video start and end time
-    df_gpio_vid = df_gpio.loc[df_gpio[' Channel Name']==' BNC Trigger Input']
-    vid_start = df_gpio_vid.loc[df_gpio_vid[' Value'] > 0]['Time (s)'] - traces_delay
+    df_gpio_vid = df_gpio.loc[df_gpio[' Channel Name'] ==' BNC Trigger Input']
+    vid_start = (df_gpio_vid.loc[df_gpio_vid[' Value'] > 0]['Time (s)']
+                 - traces_delay)
     vid_end = df_gpio_vid.loc[vid_start.index + 1]['Time (s)'] - traces_delay
     vid_start.reset_index(inplace = True, drop = True)
     vid_end.reset_index(inplace = True, drop = True)
@@ -164,23 +168,25 @@ def process_calcium(df_traces, df_events, processed, n_sessions, traces_start,
     for cell in set(df_events[' Cell Name'].tolist()):
         df_current_cell = df_events.loc[df_events[' Cell Name'] == cell].copy()
         for spiketime in df_current_cell['Time (s)']:
-            spikeval = float(df_current_cell.loc[df_current_cell['Time (s)'] == spiketime, ' Value'])
+            spikeval = float(df_current_cell.loc[df_current_cell['Time (s)']
+                                                 == spiketime, ' Value'])
             ind_spike = (df_traces['Time (s)'] - spiketime).abs().argsort()[0]
             df_events_expand.loc[ind_spike, cell] = spikeval
     
     for s in range(n_sessions):
         ind_start = (df_traces['Time (s)'] - traces_start[s]).abs().argsort()[0]
         ind_end = (df_traces['Time (s)'] - traces_end[s]).abs().argsort()[0]
-        df_traces_curr = df_traces[ind_start:ind_end+1].copy().reset_index(drop=True)
-        df_traces_curr['Time (s)'] = (df_traces_curr['Time (s)'] -
-                                      df_traces_curr['Time (s)'][0])
+        df_traces_curr = df_traces[ind_start:ind_end+1].copy().reset_index(drop = True)
+        df_traces_curr['Time (s)'] = (df_traces_curr['Time (s)']
+                                      - df_traces_curr['Time (s)'][0])
         processed['df_traces' + str(s)] = df_traces_curr
-        df_events_curr = df_events_expand[ind_start:ind_end+1].copy().reset_index(drop=True)
-        df_events_curr['Time (s)'] = (df_events_curr['Time (s)'] -
-                                      df_events_curr['Time (s)'][0])
+        df_events_curr = df_events_expand[ind_start:ind_end+1].copy().reset_index(drop = True)
+        df_events_curr['Time (s)'] = (df_events_curr['Time (s)']
+                                      - df_events_curr['Time (s)'][0])
         processed['df_events' + str(s)] = df_events_curr
 
-def movement_analysis(df_vid, df_ref, pthresh = 0.99, px2cm = 490/30, framerate = 10):
+def movement_analysis(df_vid, df_ref, pthresh = 0.99, px2cm = 490 / 30,
+                      framerate = 10):
     """
     Calculate actual position and speed from a motion detection data.
 
@@ -205,17 +211,17 @@ def movement_analysis(df_vid, df_ref, pthresh = 0.99, px2cm = 490/30, framerate 
         DataFrame containing the processed motion data.
 
     """
-    df_vid['head_x']=np.nan
+    df_vid['head_x'] = np.nan
     df_vid['head_x'].loc[(df_vid['neck_likelihood'] >= pthresh)] = df_vid['neck_x']
     df_vid['head_x'].loc[(df_vid['left ear_likelihood'] >= pthresh) &
                      (df_vid['right ear_likelihood'] >= pthresh)] = (df_vid['left ear_x'] + df_vid['right ear_x'])/2
-    df_vid['head_y']=np.nan
+    df_vid['head_y'] = np.nan
     df_vid['head_y'].loc[(df_vid['neck_likelihood'] >= pthresh)] = df_vid['neck_y']
     df_vid['head_y'].loc[(df_vid['left ear_likelihood'] >= pthresh) & 
                      (df_vid['right ear_likelihood'] >= pthresh)] = (df_vid['left ear_y'] + df_vid['right ear_y'])/2
     
-    df_vid['head_x'].interpolate(inplace=True)
-    df_vid['head_y'].interpolate(inplace=True)
+    df_vid['head_x'].interpolate(inplace = True)
+    df_vid['head_y'].interpolate(inplace = True)
     
     newtime = list(np.linspace(df_vid.index[0], df_vid.index[-1], df_ref.shape[0]))
     df_new = pd.DataFrame(data = df_ref['Time (s)'],
@@ -226,12 +232,13 @@ def movement_analysis(df_vid, df_ref, pthresh = 0.99, px2cm = 490/30, framerate 
     df_new['head_y'] = df_new['head_y'].rolling(window = 5, center = True).mean()
     
     speed = [np.nan]
+    
     for i in df_new.index[:-1]:
         currspd = (((df_new.loc[i+1, 'head_x'] - df_new.loc[i, 'head_x'])**2 + 
                     (df_new.loc[i+1, 'head_y'] - df_new.loc[i, 'head_y'])**2)**0.5)
-        currspd = currspd / (px2cm * framerate)
+        currspd = (currspd / px2cm) * framerate
         speed.append(currspd)
-    df_new['Speed']=speed
+    df_new['Speed'] = speed
     
     return df_new
 
@@ -273,7 +280,7 @@ def calculate_placemap(df_events, df_move, x_bound = 0, x_len = 480,
 
     """
     placemaps = {}
-    grid_x, grid_y = x_len/n_grid, y_len/n_grid
+    grid_x, grid_y = x_len / n_grid, y_len / n_grid
     df_zero = pd.DataFrame(0, columns = [i for i in range(n_grid)],
                            index = [i for i in range(n_grid)])
     df_occ = df_zero.copy()
@@ -291,12 +298,12 @@ def calculate_placemap(df_events, df_move, x_bound = 0, x_len = 480,
     elif half == 'all':
         for i in ind_occ:
             df_occ.at[df_grid.loc[i, 'y'],df_grid.loc[i, 'x']] += 1
-    df_occ.replace(0, np.nan, inplace=True) # Ignore unvisited bins
         
     for cell in df_events.columns[1:]:
         df_spk = df_zero.copy()
         ind_spk = df_events.loc[df_events[cell] > 0].index
         ind_run = df_move.loc[df_move['Speed'] >= 0.5].index
+        
         if half == 'first':
             for i in ind_spk.intersection(ind_run).intersection(ind_occ).intersection(df_grid.index[:ind_mid]):
                 df_spk.at[df_grid.loc[i, 'y'],df_grid.loc[i, 'x']] += df_events.loc[i, cell]
@@ -308,7 +315,7 @@ def calculate_placemap(df_events, df_move, x_bound = 0, x_len = 480,
                 df_spk.at[df_grid.loc[i, 'y'],df_grid.loc[i, 'x']] += df_events.loc[i, cell]
 
         df_rate = df_spk / df_occ
-        df_rate.replace(np.nan,0,inplace=True)
+        df_rate.replace(np.nan, 0, inplace = True)
         df_rate = gaussian_filter(df_rate, sigma = 2.5, truncate=2.0) # Gaussian smoothing with delta = 2.5, 3*3 window
         df_rate = pd.DataFrame(df_rate/np.nanmax(df_rate.max()))
         placemaps[cell] = df_rate
@@ -399,8 +406,8 @@ def calculate_similarity(placemaps, session1, session2, savepath):
     df_placecell_1 = pd.read_csv(fname_PCID_1, index_col = 0)
     df_placecell_2 = pd.read_csv(fname_PCID_2, index_col = 0)
     
-    placecell_list = (df_placecell_1.T.loc[df_placecell_1.loc['Is place cell?']=='Accepted'].index.tolist() +
-                      df_placecell_2.T.loc[df_placecell_2.loc['Is place cell?']=='Accepted'].index.tolist())
+    placecell_list = (df_placecell_1.T.loc[df_placecell_1.loc['Is place cell?'] == 'Accepted'].index.tolist() +
+                      df_placecell_2.T.loc[df_placecell_2.loc['Is place cell?'] == 'Accepted'].index.tolist())
     placecell_list = list(set(placecell_list))
     placecell_list.sort()
 
