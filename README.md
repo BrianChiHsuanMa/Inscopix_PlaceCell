@@ -6,6 +6,7 @@ The code assumes the following configuration has been used during data collectio
 - Video capturing device configured to send out BNC signal to Inscopix DAQ box at recording start.
 
 The following recording configurations are supported:
+![Example recording configurations](/images/Inscopix%20recording.png)
 
 ## Installation
 1. Clone this repository by running `git clone git@github.com:BrianChiHsuanMa/Inscopix_PlaceCell.git`, then change directory with `cd Inscopix_PlaceCell`.
