@@ -11,6 +11,7 @@ x_bounds = [60, 75, 60, 80, 70] # Left boundary of the actual arena, for each se
 y_lens = [480,480,480,480,480] # Length of actual arena on y-axis, for each session
 y_bounds = [0, 0, 0, 0, 0] # Upper boundary of the actual arena, for each session
 px2cm = 490/30 # Conversion ratio between pixel and cm
+x_res, y_res = 640, 480 # X- and y- resolution of the captured video
 
 # Generates subdirectory to store output
 savepath = create_savepath(data_dir)
@@ -56,7 +57,7 @@ for s in range(n_sessions):
     maps_second['session' + str(s)] = maps_second_curr
     
 maps = {'all': maps_all, 'first': maps_first, 'second': maps_second}
-#%%
+
 # Place cell identification for all sessions, store results
 for s in maps_first.keys():
     df_placecell = placecell_identification(maps_first[s], maps_second[s])
@@ -67,9 +68,8 @@ s1 = 'session0'
 s2 = 'session1'
 df_sim = calculate_similarity(maps_all, s1, s2, savepath)
 df_sim.to_csv(os.path.join(savepath, s1 + ' ' + s2 + ' Similarity Score.csv'))
-#%%
+
 # Plot movement trajectory for all sessions
-x_res, y_res = 640, 480
 plot_movement(processed, n_sessions, x_res, y_res, savepath)
 
 # Plot distribution of speed
